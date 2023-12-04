@@ -27,10 +27,12 @@ HTAN_all_samples <- read.delim(paste0(input_dir, "HTAN_all_samples.tsv"), sep='\
 assay_types <- unique(HTAN_all_samples$Assay)
 
 # spatial_assays <- c("MERFISH", "MIBI", "H&E", "Imaging", "MxIF", "10x Visium", "CyCIF", "mIHC", "RareCyte Orion", "IMC", "CODEX")
-spatial_assays <- c("MERFISH", "MIBI", "MxIF", "10x Visium", "CyCIF", "mIHC", "RareCyte Orion", "IMC", "CODEX")
+# spatial_assays <- c("MERFISH", "MIBI", "MxIF", "10x Visium", "CyCIF", "mIHC", "RareCyte Orion", "IMC", "CODEX")
 
+# omic_assays <- c("scRNA-seq", "Bulk DNA", "Bulk RNA-seq", "scATAC-seq", "HI-C-seq", "Bulk Methylation-seq", "LC-MS/MS", "Shotgun MS (lipidomics)")  
 
-omic_assays <- c("scRNA-seq", "Bulk DNA", "Bulk RNA-seq", "scATAC-seq", "HI-C-seq", "Bulk Methylation-seq", "LC-MS/MS", "Shotgun MS (lipidomics)")  
+spatial_assays <- c("10x Visium")
+omic_assays <- c("scRNA-seq")
 
 df <- HTAN_all_samples %>% 
   filter(Assay != "") %>% 
@@ -42,7 +44,23 @@ df$Biospecimen[duplicated(df$Biospecimen)]
 
 viable_df <- df %>% filter(hasBoth == TRUE)
 
-write.csv(viable_df, paste0(out_tbl_dir, "ViableSamples.csv"))
+write.csv(viable_df, paste0(out_tbl_dir, "ViableSamples_Visium.csv"))
+
+
+### Match samples in HTAN WUSTL dataset
+HTAN_WUSTL_sc <- read.delim(paste0(input_dir, "WUSTL scRNA IDs.tsv"), sep='\t')
+HTAN_WUSTL_spatial <- read.delim(paste0(input_dir, "WUSTL Visium IDs.tsv"), sep='\t')
+HTAN_WUSTL_files <- read.delim(paste0(input_dir, "WUSTL Files.tsv"), sep='\t') %>% 
+  mutate(HTAN.Participant.ID = gsub("_[0-9]*$", "", Biospecimen))
+WUSTL_match <- inner_join(HTAN_WUSTL_sc, HTAN_WUSTL_spatial, by = "HTAN.Participant.ID")
+
+write.csv(WUSTL_match, paste0(out_tbl_dir, "ViableSamples_WUSTL.csv"))
+
+WUSTL_match <- inner_join(WUSTL_match, HTAN_WUSTL_files, by = "HTAN.Participant.ID") %>% 
+  dplyr::select(HTAN.Participant.ID, Filename, Biospecimen, Assay) %>% 
+  filter(Assay == "scRNA-seq" & grepl("level_3", Filename))
+
+write.csv(WUSTL_match, paste0(out_tbl_dir, "ViableSamples_WUSTL_Filenames.csv"))
 
 ```
 

@@ -1,0 +1,48 @@
+---
+title: "HTAN_Wrangling"
+author: "Myung Chang Lee (Noah Lee)"
+output: html_document
+date: "`r format(Sys.time(), '%B %d %Y')`"
+---
+
+### Summary
+Initially created on Oct. 2nd, 2023 to determine the number of biosamples with paired transcriptomic / spatial data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+
+input_dir <- "./input/"
+out_fig_dir <- "./output/figs/"
+out_tbl_dir <- "./output/tables/"
+
+
+```
+
+
+```{r check biosamples}
+
+HTAN_all_samples <- read.delim(paste0(input_dir, "HTAN_all_samples.tsv"), sep='\t')
+
+assay_types <- unique(HTAN_all_samples$Assay)
+
+# spatial_assays <- c("MERFISH", "MIBI", "H&E", "Imaging", "MxIF", "10x Visium", "CyCIF", "mIHC", "RareCyte Orion", "IMC", "CODEX")
+spatial_assays <- c("MERFISH", "MIBI", "MxIF", "10x Visium", "CyCIF", "mIHC", "RareCyte Orion", "IMC", "CODEX")
+
+
+omic_assays <- c("scRNA-seq", "Bulk DNA", "Bulk RNA-seq", "scATAC-seq", "HI-C-seq", "Bulk Methylation-seq", "LC-MS/MS", "Shotgun MS (lipidomics)")  
+
+df <- HTAN_all_samples %>% 
+  filter(Assay != "") %>% 
+  mutate(Spatial = Assay %in% spatial_assays, Omic = Assay %in% omic_assays) %>% 
+  group_by(Biospecimen, Organ, Diagnosis) %>% 
+  summarize(Assays = paste(Assay, collapse = ", "), hasBoth = any(Omic) & any(Spatial))
+
+df$Biospecimen[duplicated(df$Biospecimen)]
+
+viable_df <- df %>% filter(hasBoth == TRUE)
+
+write.csv(viable_df, paste0(out_tbl_dir, "ViableSamples.csv"))
+
+```
+

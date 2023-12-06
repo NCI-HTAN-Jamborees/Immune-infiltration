@@ -12,3 +12,8 @@ HTAN_Wrangling.Rmd: R Markdown code to analyze the metadata from the HTAN portal
 
 metadata_analysis.Rmd: R Markdown code to analyze the metadata from the HTAN portal and use the immune subset enrichments identified from the other analyses to measure patient-level outcomes, such as overall heterogeneity and survival (specifically, progression-free survival) outcomes.
 
+spatial/cottrazm/ folder: 
+* conda-instr.txt - instructions on how to install necessary conda environment into SevenBridges DataStudio
+* cottrazm_pipeline.Rmd - R Markdown code to run the Cottrazm pipeline, including steps (...)
+* install.R - installation requirements, run before pipeline
+* read_custom.py - modified SME normalization script that is run during morphological normalization step in cottrazm_pipeline.Rmd

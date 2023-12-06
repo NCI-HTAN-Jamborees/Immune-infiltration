@@ -1,0 +1,280 @@
+---
+title: "Cottrazm Pipeline"
+output: html_document
+date: "2023-12-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Following **Cottrazm** [vignette](https://github.com/Yelab2020/Cottrazm).
+
+## Load Required Libraries
+
+```{r load lib, include=FALSE}
+library(Seurat)
+library(magrittr)
+library(dplyr)
+library(Matrix)
+library(ggplot2)
+library(stringr)
+library(RColorBrewer)
+library(patchwork)
+library(ggtree)
+library(BiocGenerics)
+library(readr)
+library(rtracklayer)
+library(infercnv)
+library(phylogram)
+library(utils)
+library(dendextend)
+library(assertthat)
+library(reticulate)
+library(openxlsx)
+library(scatterpie)
+library(cowplot)
+library(stats)
+library(quadprog)
+library(data.table)
+library(Rfast)
+library(ggrepel)
+library(tibble)
+library(clusterProfiler)
+library(utils)
+library(org.Hs.eg.db)
+
+library(Cottrazm)
+```
+
+Establish global parameters and create sub-directories.
+
+**Important**: In order to run the cottrazm analysis, the imaging and *.h5* Visium files must be in the same directory.
+- You can copy files in the terminal via *cp*. Copy to the */sbgenomics/output-files/[sample_id]* location.
+- The 3 imaging files (.json, .png, .csv) must be in a *spatial* subdirectory
+
+```{r params}
+InDir <- "/sbgenomics/project-files/WUSTL_data/Visium_10X/"
+Sample <- "HT224P1-S1Fc2U1Z1Bs1-1"
+OutDir <- paste0("/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
+H5Dir <- paste0("/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/")
+
+# files located at input
+list.files(paste0(InDir, Sample))
+
+# output directory
+dir.create(OutDir)
+dir.create(H5Dir)
+```
+
+**Problem 1: Generate h5 so we are able to perform full Cottrazm analysis.**
+
+Save an HDF5 file.
+
+```{r write hdf5}
+library(DropletUtils, verbose = FALSE)
+
+counts <- Read10X(paste0(InDir, Sample))
+print(dim(counts))
+
+h5_file <- paste0(H5Dir, "filtered_feature_bc_matrix.h5")
+write10xCounts(h5_file, counts, type = "HDF5",
+               genome = "unknown", version = "3",
+               overwrite = TRUE, gene.id = rownames(counts),
+               gene.symbol = rownames(counts))
+
+list.files(H5Dir)
+```
+*The combined filtered_feature_bc_matrix.h5 file is located in the output directory!*
+
+Test the formatting of the HDF5 file.
+
+```{r test hdf5}
+TumorST <- STPreProcess(
+    InDir = H5Dir,
+    OutDir = OutDir,
+    Sample = Sample)
+TumorST
+```
+
+## Delineation of tumor boundary
+
+### Read, pre-processing and quality control of tumor ST data.
+
+Creates Seurat object and saves QC metric plots in *[OutDir]/QC*.
+
+```{r pre-processing}
+Sample <- "HT224P1-S1Fc2U1Z1Bs1-1"
+InDir <- "/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/"
+OutDir <- paste0("/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
+
+TumorST <- STPreProcess(
+    InDir = InDir,
+    OutDir = OutDir,
+    Sample = Sample)
+TumorST
+```
+### Morphological adjusted cluster determination
+
+**Problem 2: The scanpy and stlearn read10x functions throw multiple errors. Modified the script to fix these errors. Script is uploaded to workspace (or home dir).**
+
+We utilize python libraries to perform *spatial morphological gene expression (SME)* normalization.
+
+``` {r SME}
+reticulate::use_condaenv(condaenv = "TumorBoundary")
+reticulate::source_python("read_custom.py")
+
+Adjusted_expr_mtx <- ME_normalize_new(inDir = InDir, outDir = OutDir, sample = Sample)
+```
+
+Create Morph Seurat object.
+
+```{r morph}
+# Create Morph seu.obj
+aa_try <- try(
+  rownames(Adjusted_expr_mtx) <- colnames(TumorST@assays$Spatial@counts),
+  silent = T
+)
+
+if (is(aa_try, "try-error")) {
+  library(Matrix)
+  Adjusted_expr_mtx <- Matrix::readMM(paste(OutDir, Sample, "_raw_SME_normalizeA.mtx", sep = ""))
+  rownames(Adjusted_expr_mtx) <- colnames(TumorST@assays$Spatial@counts)
+  colnames(Adjusted_expr_mtx) <- rownames(TumorST@assays$Spatial@counts)
+} else {
+  rownames(Adjusted_expr_mtx) <- colnames(TumorST@assays$Spatial@counts)
+  colnames(Adjusted_expr_mtx) <- rownames(TumorST@assays$Spatial@counts)
+}
+
+Adjusted_expr_mtxF <- t(as.matrix(Adjusted_expr_mtx))
+MorphMatirxSeurat <- CreateSeuratObject(counts = as(Adjusted_expr_mtxF,'sparseMatrix'))
+
+# Add morph feature as assay to TumorST
+MorphMatirxSeurat <- subset(MorphMatirxSeurat, cells = rownames(TumorST@meta.data))
+TumorST@assays$Morph <- MorphMatirxSeurat@assays$RNA
+
+TumorST
+```
+
+Use Morph as assay for Downstream functions
+
+```{r morph downstream}
+TumorST <- NormalizeData(TumorST, assay = "Morph")
+TumorST <- FindVariableFeatures(object = TumorST, mean.function = ExpMean, dispersion.function = LogVMR, assay = "Morph")
+TumorST <- ScaleData(object = TumorST, assay = "Morph") # ,vars.to.regress = c('Mito.percent','Ribo.percent'))
+TumorST <- RunPCA(object = TumorST, npcs = 50, verbose = FALSE, assay = "Morph")
+TumorST <- FindNeighbors(TumorST, reduction = "pca", dims = 1:50, assay = "Morph")
+TumorST <- RunUMAP(object = TumorST, dims = 1:50, assay = "Morph")
+TumorST <- FindClusters(TumorST, resolution = res, algorithm = 1, graph.name = "Morph_snn")
+
+TumorST@meta.data$seurat_clusters <- TumorST@meta.data[, paste("Morph_snn_res.", res, sep = "")]
+```
+
+Plot the clustering results
+
+```{r clustering}
+# plot cluster result
+.cluster_cols <- c(
+  "#DC050C", "#FB8072", "#1965B0", "#7BAFDE", "#882E72",
+  "#B17BA6", "#FF7F00", "#FDB462", "#E7298A", "#E78AC3",
+  "#33A02C", "#B2DF8A", "#55B1B1", "#8DD3C7", "#A6761D",
+  "#E6AB02", "#7570B3", "#BEAED4", "#666666", "#999999",
+  "#aa8282", "#d4b7b7", "#8600bf", "#ba5ce3", "#808000",
+  "#aeae5c", "#1e90ff", "#00bfff", "#56ff0d", "#ffff00"
+)
+pdf(paste(OutDir, Sample, "_Spatial_SeuratCluster.pdf", sep = ""), width = 7, height = 7)
+p <- SpatialDimPlot(TumorST, group.by = "seurat_clusters", cols = .cluster_cols, pt.size.factor = 1, alpha = 0.8) +
+  scale_fill_manual(values = .cluster_cols)+
+  labs(title = paste("Resolution = ", res, sep = ""))
+print(p)
+dev.off()
+p
+
+pdf(paste(OutDir, Sample, "_UMAP_SeuratCluster.pdf", sep = ""), width = 7, height = 7)
+p <- DimPlot(TumorST, group.by = "seurat_clusters", cols = .cluster_cols) + labs(title = paste("Resolution = ", res, sep = "")) +
+  scale_fill_manual(values = .cluster_cols)
+print(p)
+dev.off()
+p
+
+```
+
+Add ImmuneScore
+
+```{r immune-score}
+Normalfeatures <- c("PTPRC","CD2","CD3D","CD3E","CD3G","CD5","CD7","CD79A",'MS4A1',"CD19")
+TumorST@meta.data$NormalScore <- apply(TumorST@assays$Morph@data[rownames(TumorST@assays$Morph@data) %in% Normalfeatures, ], 2, mean)
+
+pdf(paste(OutDir, Sample, "_NormalScore.pdf", sep = ""), width = 6, height = 4)
+p <- VlnPlot(TumorST, features = "NormalScore", pt.size = 0, group.by = "seurat_clusters", cols = .cluster_cols) +
+  geom_boxplot() +
+  geom_hline(yintercept = max(unlist(lapply(
+    split(TumorST@meta.data[, c("seurat_clusters", "NormalScore")], TumorST@meta.data[, c("seurat_clusters", "NormalScore")]$seurat_clusters),
+    function(test) median(test$NormalScore)
+  ))), linetype = "dashed") +
+  ggpubr::stat_compare_means() + NoLegend()
+print(p)
+dev.off()
+p
+
+NormalCluster <- levels(TumorST$seurat_clusters)[order(unlist(lapply(
+  split(
+    TumorST@meta.data[, c("seurat_clusters", "NormalScore")],
+    TumorST@meta.data[, c("seurat_clusters", "NormalScore")]$seurat_clusters
+  ),
+  function(test) mean(test$NormalScore)
+)), decreasing = T)[1]]
+print(paste("NormalCluster = ", NormalCluster, sep = ""))
+```
+
+Save annotation file for CNV
+
+```{r save anno file}
+# save CNV annotation file
+cellAnnotation <- data.frame(CellID = rownames(TumorST@meta.data), DefineTypes = TumorST@meta.data[, "seurat_clusters"])
+dir.create(paste(OutDir, "InferCNV", sep = ""))
+write.table(cellAnnotation, paste(OutDir, "InferCNV/CellAnnotation.txt", sep = ""), sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+### Run InferCNV on ST data
+
+Run InferCNV - will take a while to run.
+
+```{r inferncv}
+STInferCNV <- STCNV(TumorST = TumorST, OutDir = OutDir, assay = "Spatial")
+```
+
+Score ST data based on InferCNV result and visualize.
+
+```{r cnv score}
+TumorST <- STCNVScore(TumorST = TumorST, assay = "Spatial", Sample = Sample, OutDir = OutDir)
+```
+
+### Define Boundary of Tumor
+
+Assign malignant labels according to generated plots. Then, define the boundary.
+
+```{r define}
+malignant_labels = c() # fill in labels with highest CNV scores
+
+TumorSTn <- BoundaryDefine(TumorST = TumorST,
+                           MalLabel = malignant_labels,
+                           OutDir = OutDir, Sample = Sample)
+```
+
+After defining malignant spots, assign Mal (malignant spots), Bdy (boundary spots), and nMal (non-malignant spots).
+
+```{r boundary}
+TumorST <- BoundaryPlot(TumorSTn = TumorSTn,
+                        TumorST = TumorST,
+                        OutDir = OutDir,
+                        Sample = Sample)
+```
+
+## Save
+
+Save results to be loaded in later.
+
+```{r save objects}
+save(TumorST, STInferCNV, TumorSTn, file = paste0(OutDir, "cottrazm_res.Rdata"))
+```

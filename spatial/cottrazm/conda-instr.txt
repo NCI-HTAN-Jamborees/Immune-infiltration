@@ -1,0 +1,12 @@
+To install miniconda, 
+	1. download installer from https://docs.conda.io/projects/miniconda/en/latest/ with `wget`.
+	2. bash Miniconda3-latest-...sh (installer that was downloaded)
+
+Add miniconda3/bin to path,
+	export PATH=$PATH:/sbgenomics/workspace/miniconda3/bin
+
+conda create -n TumorBoundary python=3.8
+conda activate TumorBoundary (for first activation after new install, use "source activate [envName]")
+
+conda install -c conda-forge stlearn
+conda install numpy

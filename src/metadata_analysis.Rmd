@@ -1,0 +1,65 @@
+---
+title: "metadata_analysis"
+author: "Myung Chang Lee (Noah Lee)"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+Created on Dec. 5th, 2023 to analyze the patient metadata for assessing hazard ratios of various variables
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(survival)
+library(ggfortify)
+library(ggpubr)
+
+
+input_dir <- "/sbgenomics/project-files/metadata_analysis/input/"
+output_dir <- "/sbgenomics/project-files/metadata_analysis/output/"
+
+### Potential feedback item: While the session is running, changes (creation) of directories are not recognized, but new file creation/upload is recognized fine within the workspace
+
+```
+
+## Read in metadata file
+
+```{r read metadata and QC}
+
+HTAN_all_samples <- read.delim(paste0(input_dir, "HTAN_all_samples.tsv"), sep='\t')
+HTAN_WUSTL_Cases <- read.delim(paste0(input_dir, "HTAN_WUSTL_Case_Data.tsv"), sep='\t')
+
+### Check overlapping colnames to see whether survival columns are included
+colnames(HTAN_all_samples)[colnames(HTAN_all_samples) %in% colnames(HTAN_WUSTL_Cases)]
+
+
+
+### Puzzling finding -- how is Days.to.Last.Follow.up and Days.to.Last.Known.Disease.Status < Days.to.Progression in some cases?
+## Days.to.Last.Follow.up and Days.to.Last.Known.Disease.Status are mostly the same, but samples where the two are different don't show a clear, consistent direction
+diff <- HTAN_WUSTL_Cases[(HTAN_WUSTL_Cases$Days.to.Last.Follow.up != HTAN_WUSTL_Cases$Days.to.Last.Known.Disease.Status),] %>% 
+  select(starts_with("Days"))
+
+```
+
+## Perform survival analysis
+
+```{r PFS analysis}
+
+### Perform survival analysis, using PFS data (OS available in only a very small subset) and using the longest follow-up date for the time variable  
+PFS_df <- HTAN_WUSTL_Cases %>% 
+  mutate(time = ifelse(Days.to.Progression != "", Days.to.Progression, ifelse(Days.to.Last.Follow.up > Days.to.Last.Known.Disease.Status, Days.to.Last.Follow.up, Days.to.Last.Known.Disease.Status)), status = ifelse(Days.to.Progression != "", 1, 0)) %>% 
+  mutate(time = as.numeric(time)) %>% 
+  mutate(over_65 = ifelse(Age.at.Diagnosis..years. > 65, "Age>65", "Age≤65"))
+
+PFS_fit <- survfit(Surv(time, status) ~ over_65, data=PFS_df)
+
+summary(PFS_fit, times = c(1,30,60,90*(1:10)))
+
+autoplot(PFS_fit) +
+  xlab("Days") +
+  ylab("PFS (%)") +
+  theme_pubr()
+
+  
+```

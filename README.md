@@ -10,3 +10,5 @@ Description of code utilized:
 
 HTAN_Wrangling.Rmd: R Markdown code to analyze the metadata from the HTAN portal and identify which samples / studies have paired spatial/single-cell transcriptomic data from patients. We identify 13 patients from HTAN Vanderbilt dataset and 10 patients from HTAN WUSTL dataset and match them with relevant file names for downstream analyses.
 
+metadata_analysis.Rmd: R Markdown code to analyze the metadata from the HTAN portal and use the immune subset enrichments identified from the other analyses to measure patient-level outcomes, such as overall heterogeneity and survival (specifically, progression-free survival) outcomes.
+

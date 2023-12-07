@@ -35,7 +35,7 @@ spatial/cottrazm/ folder:
 
 ## Team
 
-- **Noah Lee**, Affil
+- **Noah Lee**, Genentech
 - **Jason Weirather**, Affil
 - **Rena Elkin**, Affil
 - **Hope Mumme**, Emory University

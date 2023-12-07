@@ -36,9 +36,9 @@ spatial/cottrazm/ folder:
 ## Team
 
 - **Noah Lee**, Genentech
-- **Jason Weirather**, Affil
-- **Rena Elkin**, Affil
-- **Hope Mumme**, Emory University
-- **Archana Balan**, Affil
-- **Nina Steel**, Affil
-- **Lucy Zhengyi Chen**, Affil
+- **Jason Weirather**, Dana-Farber Cancer Institute, Boston MA - Department of Data Science Center for Immuno-Oncology
+- **Rena Elkin**, Memorial Sloan Kettering Cancer Center - Medical Physics Department
+- **Hope Mumme**, Emory University, Atlanta GA - Emory School of Medicine Department of Biomedical Informatics
+- **Archana Balan**, Johns Hopkins University - Biomedical Engineering Program
+- **Nina Steele**, Henry Ford Hospital, Detroit MI - Department of Surgery, Henry Ford Pancreatic Cancer Center
+- **Lucy Zhengyi Chen**, Vanderbilt University, Nashville TN - Chemical and Physical Biology Program

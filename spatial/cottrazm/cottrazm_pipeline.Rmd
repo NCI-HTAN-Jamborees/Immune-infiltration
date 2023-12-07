@@ -10,6 +10,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 Following **Cottrazm** [vignette](https://github.com/Yelab2020/Cottrazm).
 
+Necessary to use a high RAM environment. Crashed at 16GB and 32GB...
+
 ## Load Required Libraries
 
 ```{r load lib, include=FALSE}
@@ -50,21 +52,21 @@ library(Cottrazm)
 Establish global parameters and create sub-directories.
 
 **Important**: In order to run the cottrazm analysis, the imaging and *.h5* Visium files must be in the same directory.
-- You can copy files in the terminal via *cp*. Copy to the */sbgenomics/output-files/[sample_id]* location.
+- You can copy files in the terminal via *cp*. Copy to the */sbgenomics/output-files/cottrazm_analysis/[sample_id]* location.
 - The 3 imaging files (.json, .png, .csv) must be in a *spatial* subdirectory
 
 ```{r params}
 InDir <- "/sbgenomics/project-files/WUSTL_data/Visium_10X/"
 Sample <- "HT224P1-S1Fc2U1Z1Bs1-1"
-OutDir <- paste0("/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
-H5Dir <- paste0("/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/")
+OutDir <- paste0("/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
+H5Dir <- paste0("/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/")
 
 # files located at input
 list.files(paste0(InDir, Sample))
 
 # output directory
-dir.create(OutDir)
 dir.create(H5Dir)
+dir.create(OutDir)
 ```
 
 **Problem 1: Generate h5 so we are able to perform full Cottrazm analysis.**
@@ -84,6 +86,7 @@ write10xCounts(h5_file, counts, type = "HDF5",
                gene.symbol = rownames(counts))
 
 list.files(H5Dir)
+rm(counts)
 ```
 *The combined filtered_feature_bc_matrix.h5 file is located in the output directory!*
 
@@ -105,8 +108,8 @@ Creates Seurat object and saves QC metric plots in *[OutDir]/QC*.
 
 ```{r pre-processing}
 Sample <- "HT224P1-S1Fc2U1Z1Bs1-1"
-InDir <- "/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/"
-OutDir <- paste0("/sbgenomics/output-files/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
+InDir <- "/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/"
+OutDir <- paste0("/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
 
 TumorST <- STPreProcess(
     InDir = InDir,
@@ -154,11 +157,17 @@ MorphMatirxSeurat <- subset(MorphMatirxSeurat, cells = rownames(TumorST@meta.dat
 TumorST@assays$Morph <- MorphMatirxSeurat@assays$RNA
 
 TumorST
+
+# remove unessary files to restore mem
+rm(MorphMatirxSeurat)
+rm(Adjusted_expr_mtx)
+rm(Adjusted_expr_mtxF)
 ```
 
 Use Morph as assay for Downstream functions
 
 ```{r morph downstream}
+res <- 1.5
 TumorST <- NormalizeData(TumorST, assay = "Morph")
 TumorST <- FindVariableFeatures(object = TumorST, mean.function = ExpMean, dispersion.function = LogVMR, assay = "Morph")
 TumorST <- ScaleData(object = TumorST, assay = "Morph") # ,vars.to.regress = c('Mito.percent','Ribo.percent'))
@@ -236,12 +245,61 @@ dir.create(paste(OutDir, "InferCNV", sep = ""))
 write.table(cellAnnotation, paste(OutDir, "InferCNV/CellAnnotation.txt", sep = ""), sep = "\t", row.names = F, col.names = F, quote = F)
 ```
 
+Save intermediate Seurat object.
+
+```{r save int}
+saveRDS(TumorST, file = paste0(OutDir, "TumorST_preCNV.Rds"))
+```
+
 ### Run InferCNV on ST data
 
 Run InferCNV - will take a while to run.
 
 ```{r inferncv}
-STInferCNV <- STCNV(TumorST = TumorST, OutDir = OutDir, assay = "Spatial")
+# generate matrix
+matrix <- Seurat::GetAssayData(TumorST, slot = "counts", assay = "Spatial") %>% as.matrix()
+annotation_file <- paste(OutDir, "InferCNV/CellAnnotation.txt", sep = "")
+NormalCluster <- levels(TumorST$seurat_clusters)[order(unlist(lapply(
+  split(
+    TumorST@meta.data[, c("seurat_clusters", "NormalScore")],
+    TumorST@meta.data[, c("seurat_clusters", "NormalScore")]$seurat_clusters
+  ),
+  function(test) mean(test$NormalScore)
+)), decreasing = T)[1]]
+
+ref_cluster <- NormalCluster
+gene_order_file <- system.file("extdata/gencode_v38_gene_pos.txt", package = "Cottrazm")
+
+infercnv_obj <- CreateInfercnvObject(
+  raw_counts_matrix = matrix,
+  annotations_file = annotation_file,
+  delim = "\t",
+  gene_order_file = gene_order_file,
+  ref_group_names = ref_cluster
+) # set reference group, if NULL, take mean of all spots as reference
+
+# perform infercnv operations to reveal cnv signal
+infercnv_obj <- infercnv::run(infercnv_obj,
+  cutoff = 0.1, # use 1 for smart-seq, 0.1 for 10x-genomics
+  out_dir = paste(OutDir, "InferCNV/output_", assay, sep = ""), # output files
+  cluster_by_groups = F, # cluster or not
+  analysis_mode = "subclusters",
+  denoise = T,
+  HMM = T,
+  tumor_subcluster_partition_method = "leiden",
+  HMM_type = "i6",
+  BayesMaxPNormal = 0,
+  num_threads = 30
+  #plot_probabilities = F,
+  #save_rds = F,
+  #save_final_rds = F,
+  #no_plot = T,
+  #output_format = NA,
+  #useRaster = T,
+  #up_to_step = 17
+)
+
+STInferCNV <- STCNV(TumorST = TumorST, OutDir = OutDir, assay = "Spatial") 
 ```
 
 Score ST data based on InferCNV result and visualize.
@@ -250,7 +308,7 @@ Score ST data based on InferCNV result and visualize.
 TumorST <- STCNVScore(TumorST = TumorST, assay = "Spatial", Sample = Sample, OutDir = OutDir)
 ```
 
-### Define Boundary of Tumor
+### Define Boundary of Tumor   
 
 Assign malignant labels according to generated plots. Then, define the boundary.
 
@@ -277,4 +335,255 @@ Save results to be loaded in later.
 
 ```{r save objects}
 save(TumorST, STInferCNV, TumorSTn, file = paste0(OutDir, "cottrazm_res.Rdata"))
+```
+
+Resume Analysis.
+
+```{r resume}
+Sample <- "HT224P1-S1Fc2U1Z1Bs1-1"
+InDir <- "/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/"
+OutDir <- paste0("/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
+
+TumorST <- readRDS("/sbgenomics/project-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/HT224P1-S1Fc2U1Z1Bs1-1-outs/TumorST_preCNV.Rds")
+```
+
+## ScRNA-Seq for Sample
+
+Load in Single Cell 10X Data.
+
+```{r load scRNA}
+sc_data <- Read10X(data.dir = paste0(InDir, "scRNA"))
+TumorSC <- CreateSeuratObject(counts = sc_data, project = Sample, min.cells = 3, min.features = 200)
+TumorSC
+```
+QC
+
+```{r qc sc}
+TumorSC[["percent.mt"]] <- PercentageFeatureSet(TumorSC, pattern = "^MT-")
+
+pdf(paste0(OutDir, Sample, "_sc_rna_preQC.pdf"))
+# Visualize QC metrics as a violin plot
+p <- VlnPlot(TumorSC, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+print(p)
+dev.off()
+p
+```
+
+Perform QC filtering.
+
+```{r qc filter sc}
+TumorSC <- subset(TumorSC, subset = nFeature_RNA > 200 & nFeature_RNA < 6000 & percent.mt < 10)
+```
+
+Normalization + Dim Reduction
+
+```{r norm sc}
+TumorSC <- NormalizeData(TumorSC)
+TumorSC <- FindVariableFeatures(TumorSC, selection.method = "vst")
+TumorSC <- ScaleData(TumorSC, features = rownames(TumorSC))
+TumorSC <- RunPCA(TumorSC)
+TumorSC <- RunUMAP(TumorSC, dims = 1:30)
+TumorSC <- FindNeighbors(TumorSC)
+TumorSC <- FindClusters(TumorSC)
+
+DimPlot(TumorSC, label = T) + NoLegend()
+```
+
+### SC Annotation
+
+```{r anno sc}
+pdf(paste0(OutDir, Sample, "_rna_assay_UMAP.pdf"), width = 14)
+DimPlot(TumorSC, label = T, pt.size = 1)
+dev.off()
+p
+
+pdf(paste0(OutDir, Sample, "_rna_assay_dotPlot.pdf"), width = 14)
+p <- DotPlot(TumorSC, features = c('POU2F3','VAV1', #TUFT
+                                           'INSR','CHGA',"TTR", #ENDOCRINE
+                                           'CD79A','MS4A1','IGJ','IGLL5', #B/PLASMA
+                                           "G0S2", 'CXCR2',"CXCR1", #GRANULOCYTE
+                                           'KRT18','KRT8','TFF1','KRT19','SPINK1', #EPITHELIAL
+                                           "PRSS1",'AMY2A','CTRB2','REG1A',#ACINAR
+                                           'LYZ','APOE', 'HLA-DRA', 'C1QA','CD14', "CD68", #MYELOID
+                                           'CD2','CD3D','NKG7','NCAM1','CD8A','CD4','FOXP3', #T AND NK
+                                           'IGFBP7','ACTA2','RGS5', #PERICYTE
+                                           'COL1A1','DCN','LUM','CDH11', #FIBROBLASTS
+                                           'TAGLN','MYL9', #SMOOTH MUSCLE
+                                           'IRF7','GZMB','CCL22','LAMP3',"HLA-DQA1", #DC
+                                           'PLVAP','VWF', #ENDOTHELIAL
+                                           'TPSAB1','CPA3', #MAST
+                                           'HBB','HBA2' #RBC
+), assay = 'RNA') + RotatedAxis()
+print(p)
+dev.off()
+p
+```
+
+### Save SC Object
+
+
+```{r save sc}
+saveRDS(TumorSC, file = paste0(OutDir, "TumorSC.Rds"))
+
+```
+
+## Spatial Cluster Annotation
+
+Resume Analysis.
+
+```{r resume}
+Sample <- "HT224P1-S1Fc2U1Z1Bs1-1"
+InDir <- "/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/"
+OutDir <- paste0("/sbgenomics/output-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/", Sample, "-outs/")
+
+TumorST <- readRDS("/sbgenomics/project-files/cottrazm_analysis/HT224P1-S1Fc2U1Z1Bs1-1/HT224P1-S1Fc2U1Z1Bs1-1-outs/TumorST_preCNV.Rds")
+```
+
+### Apply Regular Seurat Normalization
+
+```{r sct spatial}
+DefaultAssay(TumorST) <- "Spatial"
+TumorST <- NormalizeData(TumorST, assay = "Spatial")
+TumorST <- FindVariableFeatures(TumorST, selection.method = "vst")
+TumorST <- ScaleData(TumorST, features = rownames(TumorST))
+TumorST
+```
+
+### General marker annotation 
+
+Find cluster markers.
+
+```{r cluster markers}
+DefaultAssay(TumorST) <- "Morph"
+cl_markers <- FindAllMarkers(TumorST)
+write.csv(cl_markers, paste0(OutDir, Sample, "_sme_clMarkers.csv"))
+```
+
+Print top markers per cluster.
+
+```{r top cl markers}
+for (i in levels(TumorST$seurat_clusters)) {
+  markers_i <- cl_markers %>% filter(cluster == i)
+  top_i <- head(markers_i$gene[order(markers_i$avg_log2FC, decreasing = T)],5)
+  print(paste("Cluster", i, "top 5 markers by avg_log2FC:"))
+  print(top_i)
+}
+```
+
+```{r cluster markers spatial}
+DefaultAssay(TumorST) <- "Spatial"
+cl_markers <- FindAllMarkers(TumorST)
+write.csv(cl_markers, paste0(OutDir, Sample, "_spatial_clMarkers.csv"))
+```
+
+
+Print top markers per cluster.
+
+```{r top cl markers}
+for (i in levels(TumorST$seurat_clusters)) {
+  markers_i <- cl_markers %>% filter(cluster == i)
+  top_i <- head(markers_i$gene[order(markers_i$avg_log2FC, decreasing = T)],5)
+  print(paste("Cluster", i, "top 5 markers by avg_log2FC:"))
+  print(top_i)
+}
+```
+
+
+UMAP with clusters.
+
+```{r cluster umap}
+pdf(paste0(OutDir, Sample, "_spatial_clusterUMAP.pdf"), width = 16)
+p1 <- DimPlot(TumorST, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(TumorST, label = TRUE, label.size = 3)
+p3 <- p1 + p2
+print(p3)
+p3
+dev.off()
+```
+
+```{r general markers}
+pdf(paste0(OutDir, Sample, "_sme_assay_dotPlot.pdf"), width = 14)
+p <- DotPlot(TumorST, features = c('POU2F3','VAV1', #TUFT
+                                           'INSR','CHGA',"TTR", #ENDOCRINE
+                                           'CD79A','MS4A1','IGJ','IGLL5', #B/PLASMA
+                                           "G0S2", 'CXCR2',"CXCR1", #GRANULOCYTE
+                                           'KRT18','KRT8','TFF1','KRT19','SPINK1', #EPITHELIAL
+                                           "PRSS1",'AMY2A','CTRB2','REG1A',#ACINAR
+                                           'LYZ','APOE', 'HLA-DRA', 'C1QA','CD14', "CD68", #MYELOID
+                                           'CD2','CD3D','NKG7','NCAM1','CD8A','CD4','FOXP3', #T AND NK
+                                           'IGFBP7','ACTA2','RGS5', #PERICYTE
+                                           'COL1A1','DCN','LUM','CDH11', #FIBROBLASTS
+                                           'TAGLN','MYL9', #SMOOTH MUSCLE
+                                           'IRF7','GZMB','CCL22','LAMP3',"HLA-DQA1", #DC
+                                           'PLVAP','VWF', #ENDOTHELIAL
+                                           'TPSAB1','CPA3', #MAST
+                                           'HBB','HBA2' #RBC
+), assay = 'Morph') + RotatedAxis()
+print(p)
+dev.off()
+p
+
+pdf(paste0(OutDir, Sample, "_spatial_assay_dotPlot.pdf"), width = 14)
+p <- DotPlot(TumorST, features = c('POU2F3','VAV1', #TUFT
+                                           'INSR','CHGA',"TTR", #ENDOCRINE
+                                           'CD79A','MS4A1','IGJ','IGLL5', #B/PLASMA
+                                           "G0S2", 'CXCR2',"CXCR1", #GRANULOCYTE
+                                           'KRT18','KRT8','TFF1','KRT19','SPINK1', #EPITHELIAL
+                                           "PRSS1",'AMY2A','CTRB2','REG1A',#ACINAR
+                                           'LYZ','APOE', 'HLA-DRA', 'C1QA','CD14', "CD68", #MYELOID
+                                           'CD2','CD3D','NKG7','NCAM1','CD8A','CD4','FOXP3', #T AND NK
+                                           'IGFBP7','ACTA2','RGS5', #PERICYTE
+                                           'COL1A1','DCN','LUM','CDH11', #FIBROBLASTS
+                                           'TAGLN','MYL9', #SMOOTH MUSCLE
+                                           'IRF7','GZMB','CCL22','LAMP3',"HLA-DQA1", #DC
+                                           'PLVAP','VWF', #ENDOTHELIAL
+                                           'TPSAB1','CPA3', #MAST
+                                           'HBB','HBA2' #RBC
+), assay = 'Spatial') + RotatedAxis()
+print(p)
+dev.off()
+p
+```
+
+Monocytes - 4
+Fibros/SMCs - 7
+Immune - 14
+8
+
+Save intermediate Seurat object.
+
+```{r save int}
+saveRDS(TumorST, file = paste0(OutDir, "TumorST_withSeuratNorm.Rds"))
+saveRDS(TumorST, file = "TumorST_withSeuratNorm.Rds") # also save to workspace
+```
+
+
+Feature Plots of markers.
+
+```{r features st}
+DefaultAssay(TumorST) <- "Morph"
+pdf(paste0(OutDir, Sample, "_sme_featurePlots.pdf"), width = 12)
+p1 <- DimPlot(TumorST, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(TumorST, label = TRUE, label.size = 3)
+p3 <- p1 + p2
+print(p3)
+genes <- c("CD3D", "CD14", "DCN", "CD4", "CD8A", "KRT18", "REG1A", "TAGLN", "VWF", "KRT19", "COL1A1")
+for (g in genes) {
+  p <- SpatialFeaturePlot(TumorST, features = g)
+  print(p)
+}
+dev.off()
+
+DefaultAssay(TumorST) <- "Spatial"
+pdf(paste0(OutDir, Sample, "_spatialNorm_featurePlots.pdf"), width = 12)
+p1 <- DimPlot(TumorST, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(TumorST, label = TRUE, label.size = 3)
+p3 <- p1 + p2
+print(p3)
+genes <- c("CD3D", "CD14", "DCN", "CD4", "CD8A", "KRT18", "REG1A", "TAGLN", "VWF", "KRT19", "COL1A1")
+for (g in genes) {
+  p <- SpatialFeaturePlot(TumorST, features = g)
+  print(p)
+}
+dev.off()
 ```

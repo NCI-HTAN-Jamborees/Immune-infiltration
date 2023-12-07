@@ -59,7 +59,7 @@ scRNA-seq folder:
 
 ## Team
 
-- **Noah Lee**,  Genentech, South San Francisco CA - gCS and Translational Medicine | Oncology
+- **Myung Chang Lee (Noah Lee)**,  Genentech, South San Francisco CA - gCS and Translational Medicine | Oncology
 - **Jason Weirather**, Dana-Farber Cancer Institute, Boston MA - Department of Data Science Center for Immuno-Oncology
 - **Rena Elkin**, Memorial Sloan Kettering Cancer Center - Medical Physics Department
 - **Hope Mumme**, Emory University, Atlanta GA - Emory School of Medicine Department of Biomedical Informatics

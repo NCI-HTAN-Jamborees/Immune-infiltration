@@ -23,15 +23,15 @@ We utilized a larger scRNA-seq dataset (n=137,000 cells pre QC) to label coarse 
 
 ## Description of code utilized:
 
-HTAN_Wrangling.Rmd: R Markdown code to analyze the metadata from the HTAN portal and identify which samples / studies have paired spatial/single-cell transcriptomic data from patients. We identify 13 patients from HTAN Vanderbilt dataset and 10 patients from HTAN WUSTL dataset and match them with relevant file names for downstream analyses.
+`HTAN_Wrangling.Rmd`: R Markdown code to analyze the metadata from the HTAN portal and identify which samples / studies have paired spatial/single-cell transcriptomic data from patients. We identify 13 patients from HTAN Vanderbilt dataset and 10 patients from HTAN WUSTL dataset and match them with relevant file names for downstream analyses.
 
-metadata_analysis.Rmd: R Markdown code to analyze the metadata from the HTAN portal and use the immune subset enrichments identified from the other analyses to measure patient-level outcomes, such as overall heterogeneity and survival (specifically, progression-free survival) outcomes.
+`metadata_analysis.Rmd`: R Markdown code to analyze the metadata from the HTAN portal and use the immune subset enrichments identified from the other analyses to measure patient-level outcomes, such as overall heterogeneity and survival (specifically, progression-free survival) outcomes.
 
 spatial/cottrazm/ folder: 
-* conda-instr.txt - instructions on how to install necessary conda environment into SevenBridges DataStudio
-* cottrazm_pipeline.Rmd - R Markdown code to run the Cottrazm pipeline, including steps (...)
-* install.R - installation requirements, run before pipeline
-* read_custom.py - modified SME normalization script that is run during morphological normalization step in cottrazm_pipeline.Rmd
+* `conda-instr.txt` - instructions on how to install necessary conda environment into SevenBridges DataStudio
+* `cottrazm_pipeline.Rmd` - R Markdown code to run the Cottrazm pipeline
+* `install.R` - installation requirements, run before pipeline
+* `read_custom.py` - modified SME normalization script that is run during morphological normalization step in cottrazm_pipeline.Rmd
 
 ## Team
 

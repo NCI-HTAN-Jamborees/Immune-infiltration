@@ -35,6 +35,7 @@ spatial/cottrazm/ folder:
 
 scRNA-seq folder:
 * `gene_module_score.Rmd` - R markdown code to get the gene module score plots, essential input and output files are on CGC Seven Bridge portal
+* `seurat_filter_cells.Rmd` - R markdown code to filter the combined seurat object of scRNA-seq data in HTAN WUSTL PDAC study
 
 ## Team
 

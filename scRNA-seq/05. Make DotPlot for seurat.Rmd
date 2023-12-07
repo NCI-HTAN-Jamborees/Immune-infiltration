@@ -1,0 +1,156 @@
+---
+title: "05. Make DotPlot for Seurat"
+output: html_document
+date: "2023-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+data.harmony <- readRDS("/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.harmonyJLW.rds")
+data.annotated <- readRDS("/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.harmonyJLW.annotated.rds")
+table(data.harmony@meta.data$orig.ident)
+
+markers <- readRDS("/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.harmonyJLW.markers.rds")
+```
+
+```{r, fig.width=25, fig.height=8}
+library(Seurat)
+library(dplyr)
+
+# Assuming 'markers' is a dataframe with a column for clusters and log fold change
+# Let's say the cluster column is named 'cluster' and the log fold change column is named 'avg_logFC'
+
+# Get the top 5 genes by absolute fold change for each cluster
+markers2 <- markers %>% filter(!grepl("^chr",gene)) 
+markers2$cluster <- as.integer(markers2$cluster)
+markers2 <- markers2 %>% filter(cluster < 30)
+top_genes_per_cluster <- markers2 %>% 
+  group_by(cluster) %>%
+  top_n(n = 5, wt = abs(avg_log2FC)) %>%
+  arrange(cluster, desc(abs(avg_log2FC))) %>%
+  ungroup() %>%
+  select(cluster, gene)
+
+# Create a vector of unique genes to be used in the DotPlot
+unique_genes <- unique(top_genes_per_cluster$gene)
+
+# Create the DotPlot
+DotPlot(data.harmony, features = unique_genes) + RotatedAxis()
+
+```
+
+```{r, fig.width=25, fig.height=8}
+
+
+library(Seurat)
+library(dplyr)
+library(tidyverse)
+
+# Filter the markers dataframe
+markers2 <- markers %>% filter(!grepl("^chr", gene)) 
+markers2$cluster <- as.integer(markers2$cluster)
+markers2 <- markers2 %>% filter(cluster %in% c(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29))
+
+# Get the top 5 genes per cluster
+top_genes_per_cluster <- markers2 %>% 
+  group_by(cluster) %>%
+  top_n(n = 5, wt = abs(avg_log2FC)) %>%
+  arrange(cluster, desc(abs(avg_log2FC))) %>%
+  ungroup() %>%
+  select(cluster, gene)
+
+# Create a vector of unique genes
+unique_genes_filtered <- unique(top_genes_per_cluster$gene)
+
+# Subset data.harmony to only include clusters 0 and 30
+data.harmony.subset <- subset(data.harmony, idents = c(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29))
+
+# Create the DotPlot with the subsetted data
+dot_plot <- DotPlot(data.harmony.subset, features = unique_genes_filtered) + RotatedAxis()
+
+# Adjust plot dimensions and font size
+dot_plot <- dot_plot + theme(text = element_text(size = 10),
+                             axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Print the plot
+print(dot_plot)
+
+```
+
+# now try to make one with our the targeted genelist
+
+```{r, fig.width=10, fig.height=7}
+
+gene_list <- c(
+  "MS4A1", "CD79A", "JCHAIN", "IGHG1", "IGKC", "BATF3", "CCL22", "CLEC9A", "ITGAX",
+  "HLA-DRB1", "HLA-DRB2", "HLA-DQA1", "PTPRC", "CD163", "CD68", "ITGAM", "APOE",
+  "SPP1", "TREM2", "ARG1", "C1QA", "CCR2", "CD14", "KCNE1", "MARCO", "TPSB2", "TPSAB1",
+  "CPA3", "S100A8", "CXCR1", "G0S2", "CXCL2", "NCR1", "FOXP3", "CD3E", "CD4", "CCR7",
+  "CCL5", "CD69", "CD8A", "CTLA4", "EOMES", "GZMA", "GZMB", "GZMK", "HAVCR2", "KLRC1",
+  "LAG3", "NCAM1", "NKG7", "PDCD1", "IFNG", "PRF1", "SELL", "LEF1", "TCF7", "TIGIT",
+  "TRDC", "TRDV1", "TRDV2", "TRGC1", "TRGC2", "MKI67", "POU2F3", "VAV1", "TTR", "CHGA",
+  "IGLL5", "KRT18", "KRT19", "LCN2", "MUC1", "TFF1", "PRSS1", "AMY2A", "CTRB2", "CD2",
+  "IGFBP7", "ACTA2", "RGS5", "COL1A1", "COL1A2", "DCN", "LUM", "TAGLN", "MYL9", "IRF7",
+  "PLVAP", "VWF"
+)
+
+
+
+library(Seurat)
+library(dplyr)
+library(tidyverse)
+
+# Filter the markers dataframe
+markers2 <- markers %>% filter(!grepl("^chr", gene)) 
+markers2$cluster <- as.integer(markers2$cluster)
+markers2 <- markers2 %>% filter(cluster %in% c(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29))
+
+# Get the top 5 genes per cluster
+top_genes_per_cluster <- markers2 %>% 
+  group_by(cluster) %>%
+  top_n(n = 5, wt = abs(avg_log2FC)) %>%
+  arrange(cluster, desc(abs(avg_log2FC))) %>%
+  ungroup() %>%
+  select(cluster, gene)
+
+# Create a vector of unique genes
+unique_genes_filtered <- unique(top_genes_per_cluster$gene)
+
+# Subset data.harmony to only include clusters 0 and 30
+data.harmony.subset <- subset(data.harmony, idents = c(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29))
+
+# Create the DotPlot with the subsetted data
+dot_plot <- DotPlot(data.harmony.subset, features = gene_list) + RotatedAxis()
+
+# Adjust plot dimensions and font size
+dot_plot <- dot_plot + theme(text = element_text(size = 10),
+                             axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Print the plot
+print(dot_plot)
+
+```
+
+```{r}
+
+# Plot UMAP with cluster labels
+DimPlot(data.harmony.subset, group.by = "seurat_clusters")
+```
+
+```{r}
+
+# Plot UMAP with cluster labels
+DimPlot(data.harmony, group.by = "orig.ident")
+```
+
+```{r}
+
+
+# Plot UMAP with CD45 (PTPRC) expression overlayed
+FeaturePlot(data.harmony, features = "PTPRC", pt.size = 0.5)
+
+```
+

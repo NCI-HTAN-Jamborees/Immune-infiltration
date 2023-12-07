@@ -1,0 +1,68 @@
+---
+title: "03. Inspect seurat"
+output: html_document
+date: "2023-12-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loadlibraries}
+library(future)
+plan(strategy="multicore",workers=24)
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+devtools::install_github("immunogenomics/harmony", build_vignettes=TRUE, dependencies = TRUE, upgrade = FALSE)
+library(harmony)
+```
+
+```{r readdata}
+# Load the full dataset
+data.filtered <- readRDS("/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.rds")
+
+table(data.filtered@meta.data$orig.ident)
+```
+
+```{r}
+harmonized_seurat <- RunHarmony(data.filtered, 
+				group.by.vars = c("orig.ident"), 
+				reduction = "pca", reduction.save = "harmony")
+```
+
+```{r}
+
+harmonized_seurat <- RunUMAP(harmonized_seurat, reduction = "harmony", dims = 1:40)
+
+```
+
+```{r}
+DimPlot(harmonized_seurat, reduction = "umap", group.by = "orig.ident")
+```
+
+```{r}
+features <- c("PTPRC")
+
+FeaturePlot(harmonized_seurat, features = features)
+```
+
+```{r}
+harmonized_seurat <- FindNeighbors(object = harmonized_seurat, reduction = "harmony")
+harmonized_seurat <- FindClusters(harmonized_seurat, resolution = c(0.5))
+```
+```{r}
+markers <- FindAllMarkers(data.filtered, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+
+
+
+```{r}
+markers
+
+```
+```{r}
+saveRDS(markers,'/sbgenomics/output-files/seurat_scRNA_filtered_downsampled.harmonyJLW.markers.rds')
+saveRDS(harmonized_seurat,'/sbgenomics/output-files/seurat_scRNA_filtered_downsampled.harmonyJLW.rds')
+```

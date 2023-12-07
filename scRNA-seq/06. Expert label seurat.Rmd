@@ -1,0 +1,94 @@
+---
+title: "06. Exprt label seurat"
+output: html_document
+date: "2023-12-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r loadlibraries}
+library(tidyverse)
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+#install.packages("jsonlite")
+library(jsonlite)
+#devtools::install_github("immunogenomics/harmony", build_vignettes=TRUE, dependencies = TRUE, upgrade = FALSE)
+#library(harmony)
+```
+
+```{r readdata}
+# Load the full dataset
+data.harmony <- readRDS("/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.harmonyJLW.rds")
+
+table(data.harmony@meta.data$orig.ident)
+```
+
+```{r}
+markers <- readRDS("/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.harmonyJLW.markers.rds")
+
+```
+
+
+## Read in labels
+
+```{r}
+install.packages("readxl")
+library(readxl)
+
+# Replace "your_excel_file.xlsx" with the path to your Excel file
+excel_data <- read_excel("/sbgenomics/project-files/LABELS_HTAN.xlsx")
+# Convert the Excel data frame to a list
+cluster_label_list <- split(excel_data$LABEL, excel_data$CLUSTER)
+#cluster_mapping <- fromJSON('/sbgenomics/project-files/scRNAseq_processing/singlecell.harmonyJLW.markers.gptlabels.json')
+```
+
+
+```{r}
+# Map cluster labels to values using the cluster_mapping data
+mapped_values <- sapply(as.vector(data.harmony$seurat_clusters), function(label) {
+  if (label %in% names(cluster_label_list)) {
+    return(cluster_label_list[[label]])
+  } else {
+    return(NA)  # Handle cases where a label is not found in the mapping
+  }
+})
+data.harmony$cluster_annotation <- mapped_values
+```
+
+```{r}
+
+library(Seurat)
+
+## Run UMAP analysis
+#data.harmony <- RunUMAP(data.harmony, dims = 1:30)  # You can adjust 'dims' as needed
+
+# Create a UMAP plot with cluster annotations
+DimPlot(data.harmony, group.by = "cluster_annotation")
+```
+
+```{r}
+# Create a dataframe with the counts of each cell type within each sample
+cell_counts <- data.harmony@meta.data %>%
+  group_by(orig.ident, cluster_annotation) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+# Calculate the percentage of each cell type within each sample
+cell_counts <- cell_counts %>%
+  group_by(orig.ident) %>%
+  mutate(percent = count / sum(count) * 100) %>%
+  ungroup()
+
+# Use ggplot2 to create the stacked barplot
+ggplot(cell_counts, aes(x = orig.ident, y = percent, fill = cluster_annotation)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Sample", y = "Percentage", fill = "Cell Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate x-axis labels if needed
+```
+
+```{r}
+saveRDS(harmonized_seurat,'/sbgenomics/output-files/seurat_scRNA_filtered_downsampled.harmonyJLW.expert-annotated.rds')
+```

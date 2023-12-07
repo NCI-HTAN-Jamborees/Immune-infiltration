@@ -34,7 +34,7 @@ spatial/cottrazm/ folder:
 * `read_custom.py` - modified SME normalization script that is run during morphological normalization step in cottrazm_pipeline.Rmd
 
 scRNA-seq folder:
-*`gene_module_score.Rmd` - R markdown code to get the gene module score plots, essential input and output files are on CGC Seven Bridge portal
+* `gene_module_score.Rmd` - R markdown code to get the gene module score plots, essential input and output files are on CGC Seven Bridge portal
 
 ## Team
 

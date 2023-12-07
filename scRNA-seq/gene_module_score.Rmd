@@ -1,0 +1,148 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+## Load library
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("qusage")
+
+library(qusage)
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+```
+
+## Load and process data
+```{r}
+
+project_file = '/sbgenomics/project-files/'
+output_file = '/sbgenomics/output-files/'
+
+#hallmark gene sets
+genes = read.gmt(paste0(project_file, 'scRNAseq_processing/','hallmark_2023_gene_symbol.gmt' ))
+
+# filtersed seurat object
+dat = readRDS('/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.rds')
+
+#get intersected genes 
+intersection <- function(x, dat){
+  x = intersect(x, rownames(dat))
+  return(x)
+  
+}
+
+genes_overlapped = lapply(genes, intersection, dat )
+
+```
+
+## get module score
+```{r}
+set_names = names(genes_overlapped)
+
+#dat2 = lapply(genes_overlapped, AddModuleScore, dat, )
+
+
+for( i in 1:length(set_names)){
+  print(i)
+  print(set_names[i])
+  dat <- AddModuleScore(
+  object = dat,
+  features = list( genes_overlapped[[set_names[i]]] ),
+  ctrl = 200, 
+  name = set_names[i]
+  )
+  
+}
+
+
+# test one example
+dat <- AddModuleScore(
+  object = dat,
+  features = list( genes_overlapped[[set_names[1]]] ) , #need to make it to a list 
+  ctrl = 100, 
+  name = "testing"
+  )
+
+
+```
+
+need to test list format
+```{r}
+# est list format
+ltest = list( c( genes_overlapped[[set_names[1]]] ) )
+ltest2 = genes_overlapped[[set_names[1]]]
+ltest3 <- list(c(
+  'CD79B',
+  'CD79A',
+  'CD19',
+  'CD180',
+  'CD200',
+  'CD3D',
+  'CD2',
+  'CD3E',
+  'CD7',
+  'CD8A',
+  'CD14',
+  'CD1C',
+  'CD68',
+  'CD9',
+  'CD247'
+))
+```
+
+```{r}
+# extract the vector of the modules and sample ID then perform sth like avg among patient IDs
+dat_meta = dat@meta.data
+
+#colnames(dat_meta)[4097]
+#dat@meta.data = dat@meta.data[, 0:7]
+
+```
+
+## save result
+```{r}
+write.csv(dat_meta, paste0(output_file, 'scRNA_hallmark_scores_meta.csv'), sep = ',')
+
+write.csv(dat_meta,  './scRNA_hallmark_scores_meta.csv', sep = ',')
+```
+
+
+## making violin plots for the hallmark module scores
+```{r}
+# read in the meta table
+dat_meta = read.csv(paste0(project_file, 'scRNA_hallmark_scores_meta.csv'))
+
+hallmark_data = dat_meta[, 10:59]
+hallmark_data['PatientID'] = dat_meta$orig.ident
+
+plot_table = hallmark_data %>% group_by(PatientID) %>% summarise_each( funs=mean) #check mean values 
+
+#test one pathway plotting
+p = ggplot( data = hallmark_data, aes( x = PatientID, y= HALLMARK_ALLOGRAFT_REJECTION1, fill =  PatientID ) )
+p = p+ geom_violin( ) + ggtitle('HALLMARK_ALLOGRAFT_REJECTION1') +xlab("Patient ID") + ylab("Module Score") + theme(axis.text.x = element_text(angle = 45) ) 
+ggsave("./test1.png", plot = p)
+
+
+
+```
+
+#loop through
+```{r}
+#making plots for all hallmark gene sets
+for( hm in colnames(hallmark_data)[1:50]){
+  p = ggplot( data = hallmark_data, aes( x = hallmark_data$PatientID, y= hallmark_data[[hm]], fill =  hallmark_data$PatientID ) )
+  p = p+ geom_violin( ) + ggtitle(hm) +xlab("Patient ID") + ylab("Module Score") + theme(axis.text.x = element_text(angle = 45) ) 
+  ggsave(paste0(hm, '.png'), plot = p)
+  
+}
+
+```
+
+
+
+

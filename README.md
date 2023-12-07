@@ -33,9 +33,12 @@ spatial/cottrazm/ folder:
 * `install.R` - installation requirements, run before pipeline
 * `read_custom.py` - modified SME normalization script that is run during morphological normalization step in cottrazm_pipeline.Rmd
 
+scRNA-seq folder:
+* `gene_module_score.Rmd` - R markdown code to get the gene module score plots, essential input and output files are on CGC Seven Bridge portal
+
 ## Team
 
-- **Noah Lee**, Genentech
+- **Noah Lee**,  Genentech, South San Francisco CA - gCS and Translational Medicine | Oncology
 - **Jason Weirather**, Dana-Farber Cancer Institute, Boston MA - Department of Data Science Center for Immuno-Oncology
 - **Rena Elkin**, Memorial Sloan Kettering Cancer Center - Medical Physics Department
 - **Hope Mumme**, Emory University, Atlanta GA - Emory School of Medicine Department of Biomedical Informatics

@@ -12,16 +12,149 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(survival)
+library(survminer)
 library(ggfortify)
 library(ggpubr)
+library(Seurat)
+library(openxlsx)
+library(reshape2)
+
+# remotes::install_github("mojaveazure/seurat-disk")
+
+library(SeuratDisk)
 
 
 input_dir <- "/sbgenomics/project-files/metadata_analysis/input/"
-output_dir <- "/sbgenomics/project-files/metadata_analysis/output/"
+output_dir <- "/sbgenomics/output-files/metadata_analysis/output/"
 
 ### Potential feedback item: While the session is running, changes (creation) of directories are not recognized, but new file creation/upload is recognized fine within the workspace
 
 ```
+
+### First presenting the workflow for analyzing the spatial data from 10X Visium
+```{r load spatial Seurat, eval = FALSE}
+## Read in 10X Visium aggregated Seurat object from Archana
+ST_aggregate <- LoadH5Seurat("/sbgenomics/project-files/spatial_analysis/spatial_seurat_aggregate.h5seurat")
+
+```
+
+### Analyze the ST data for immune infiltration
+
+Very rudimentary estimate using the expression levels since the per-patient UMAP clustering is not yet available. Overestimation of B/plasma markers is seen, in line with previous observation.
+Will update once we generate a Seurat object with proper cluster labels for deconvolution
+
+```{r ST analysis, eval = FALSE}
+
+#### Wishlist: Per-patient deconvolution of immune clusters (need stacked barplots of immune subsets with x-axis showing each patient) -> Take this and use for further analyses
+
+immuneMarkers <- read.xlsx(paste0(input_dir, "immune.xlsx"), sheet = 1) %>% 
+  mutate(CELL_TYPE_COARSE = gsub("MEYLOID", "MYELOID", CELL_TYPE_COARSE))
+
+### Breakdown by each patient sample
+ST.list <- SplitObject(ST_aggregate, split.by = "orig.ident")
+
+VlnPlot(ST_aggregate, features = "CD3E", group.by = "orig.ident")
+VlnPlot(ST_aggregate, features = "CD8A", group.by = "orig.ident")
+VlnPlot(ST_aggregate, features = "MS4A1", group.by = "orig.ident")
+VlnPlot(ST_aggregate, features = "PTPRC", group.by = "orig.ident")
+
+pseudobulk <- AverageExpression(ST_aggregate, group.by = "orig.ident")
+
+### Assay immune markers which have been profiled
+present_markers <- immuneMarkers$GENE.ID[immuneMarkers$GENE.ID %in% rownames(pseudobulk$SCT)]
+
+immune_subsets <- pseudobulk$SCT[present_markers,] %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var = "GENE.ID") %>% 
+  left_join(immuneMarkers, by = "GENE.ID") %>% 
+  column_to_rownames(var = "GENE.ID")
+
+coarse_scores <- immune_subsets %>%
+  dplyr::select(-CELL_TYPE_FINE) %>% 
+  group_by(CELL_TYPE_COARSE) %>% 
+  summarize(across(where(is.numeric), mean))
+
+coarse_scores_molten <- melt(coarse_scores, id.vars = "CELL_TYPE_COARSE", variable.name = "Sample", value.name = "Average Expression")
+
+stacked_bar <- ggplot(coarse_scores_molten, aes(x = Sample, y = `Average Expression`, fill = CELL_TYPE_COARSE)) +
+  geom_bar(position = "fill", stat = "identity") +
+  ylab("Transcriptional Representation (%)") +
+  theme_pubr() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+stacked_bar
+
+ggsave(paste0(output_dir, "ST_StackedBar.png"), plot = stacked_bar, dpi = 600, height = 10, width = 16)
+ggsave(paste0(output_dir, "ST_StackedBar.pdf"), plot = stacked_bar, height = 10, width = 16)
+# sp.obj <- FindVariableFeatures(ST_aggregate)
+# sp.obj <- RunPCA(ST_aggregate, assay = "SCT", verbose = FALSE)
+# sp.obj <- FindNeighbors(sp.obj, reduction = "pca", dims = 1:30)
+# sp.obj <- FindClusters(sp.obj, verbose = FALSE)
+# sp.obj <- RunUMAP(sp.obj, reduction = "pca", dims = 1:30)
+
+```
+
+
+### Pipeline for analyzing metadata-related items with single-cell transcriptomics data
+
+```{r load scRNAseq Seurat}
+## Read in harmonized Seurat object (scRNA-seq) from Jason
+harmonized_seurat <- readRDS("/sbgenomics/project-files/scRNAseq_processing/seurat_scRNA_filtered_downsampled.harmonyJLW.annotated.rds")
+
+```
+
+### Below chunk is from Jason Weirather's workflow on getting cell type representation on a per-patient basis from scRNA-seq annotations
+```{r JLW creation of per-patient representation}
+# Create a dataframe with the counts of each cell type within each sample
+cell_counts <- harmonized_seurat@meta.data %>%
+  group_by(orig.ident, cluster_annotation) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+# Calculate the percentage of each cell type within each sample
+cell_counts <- cell_counts %>%
+  group_by(orig.ident) %>%
+  mutate(percent = count / sum(count) * 100) %>%
+  ungroup()
+
+# Use ggplot2 to create the stacked barplot
+sc_stacked_bar <- ggplot(cell_counts, aes(x = orig.ident, y = percent, fill = cluster_annotation)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Sample", y = "Percentage", fill = "Cell Type") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))  # Rotate x-axis labels if needed
+
+ggsave(paste0(output_dir, "scRNA_CellIdents_StackedBar.png"), plot = sc_stacked_bar, dpi = 600, height = 10, width = 16)
+ggsave(paste0(output_dir, "scRNA_CellIdents_StackedBar.pdf"), plot = sc_stacked_bar, height = 10, width = 16)
+
+```
+
+### Now will stratify samples by immune-high and immune-low, etc.
+
+```{r stratify by scRNAseq cluster representation}
+
+## Reshape into wide form for better look at per-patient level
+cell_counts_wide <- dcast(cell_counts, orig.ident ~ cluster_annotation, value.var = "percent") %>% 
+  mutate(NonImmuneStromal = ifelse(is.na(ACINAR), 0, ACINAR) + EPITHELIAL + ifelse(is.na(`NA`), 0, `NA`))
+
+summary_stats <- sapply(cell_counts_wide, summary)
+
+summary_stats
+
+### Stratify patients by above v. below median representation of B/PC, T/NK, Myeloid, etc.
+cell_counts_wide <- cell_counts_wide %>% 
+  mutate(B_Group = ifelse(`B/PLASMA` > summary_stats$`B/PLASMA`["Median"], "> Median", "≤ Median"),
+         Myeloid_Group = ifelse(MYELOID > summary_stats$MYELOID["Median"], "> Median", "≤ Median"),
+         T_NK_Group = ifelse(`T/NK` > summary_stats$`T/NK`["Median"], "> Median", "≤ Median"),
+         Fibroblasts_Group = ifelse(FIBROBLASTS > summary_stats$FIBROBLASTS["Median"], "> Median", "≤ Median"),
+         NonImmuneStromal_Group = ifelse(NonImmuneStromal > summary_stats$NonImmuneStromal["Median"], "> Median", "≤ Median")) %>% 
+  column_to_rownames(var = "orig.ident") %>% 
+  mutate(across(where(is.character), ~paste(.x, cur_column()))) %>% 
+  rownames_to_column(var = "HTAN.Participant.ID")
+
+```
+
+
 
 ## Read in metadata file
 
@@ -44,7 +177,7 @@ diff <- HTAN_WUSTL_Cases[(HTAN_WUSTL_Cases$Days.to.Last.Follow.up != HTAN_WUSTL_
 
 ## Perform survival analysis
 
-```{r PFS analysis}
+```{r PFS analysis on patients stratified by scRNAseq data}
 
 ### Perform survival analysis, using PFS data (OS available in only a very small subset) and using the longest follow-up date for the time variable  
 PFS_df <- HTAN_WUSTL_Cases %>% 
@@ -61,5 +194,61 @@ autoplot(PFS_fit) +
   ylab("PFS (%)") +
   theme_pubr()
 
+### Subset to only patients with matched scRNA-seq data
+PFS_scRNA_df <- PFS_df %>% 
+  inner_join(cell_counts_wide, by = "HTAN.Participant.ID")
+
+### Don't really trust KM curves of 5 v. 5 patients but more as a proof of concept/sanity check
+
+PFS_fit_NonImmuneStromal <- survfit(Surv(time, status) ~ NonImmuneStromal_Group, data=PFS_scRNA_df)
+PFS_fit_T_NK <- survfit(Surv(time, status) ~ T_NK_Group, data=PFS_scRNA_df)
+PFS_fit_B <- survfit(Surv(time, status) ~ B_Group, data=PFS_scRNA_df)
+PFS_fit_Myeloid <- survfit(Surv(time, status) ~ Myeloid_Group, data=PFS_scRNA_df)
+PFS_fit_Fibroblasts <- survfit(Surv(time, status) ~ Fibroblasts_Group, data=PFS_scRNA_df)
+
+# summary(PFS_fit, times = c(1,30,60,90*(1:10)))
+
+### Function to plot PFS, just to keep them consistent
+plotPFS <- function(PFS_fit, title = "") {
+  KM_plot <- autoplot(PFS_fit, conf.int = F) +
+    xlab("Days") +
+    ylab("PFS (%)") +
+    theme_pubr()
   
+  if (title != "") {
+    ggsave(paste0(output_dir, "scRNA_KM", title, ".png"), plot = KM_plot, dpi = 600, height = 10, width = 16)
+    ggsave(paste0(output_dir, "scRNA_KM", title, ".pdf"), plot = KM_plot, height = 10, width = 16)
+  }
+  
+  KM_plot
+}
+
+plotPFS(PFS_fit_NonImmuneStromal, "_NonImmuneStromal")
+plotPFS(PFS_fit_T_NK, "_T_NK")
+plotPFS(PFS_fit_B, "_B")
+
+### All censored lol
+plotPFS(PFS_fit_Myeloid, "_Myeloid")
+plotPFS(PFS_fit_Fibroblasts, "_Fibroblasts")
+
+combined_KM <- ggsurvplot_combine(list(NonImmuneStromal = PFS_fit_NonImmuneStromal, T_NK = PFS_fit_T_NK, B = PFS_fit_B), PFS_scRNA_df)
+
+print(combined_KM)
+
+png(paste0(output_dir, "scRNA_combinedKM.png"), res = 600, height = 10, width = 16, unit = "in")
+print(combined_KM)
+dev.off()
+
+pdf(paste0(output_dir, "scRNA_combinedKM.pdf"), height = 10, width = 16)
+print(combined_KM)
+dev.off()
+
+### At this point, probably worth expanding to create this list from a loop...
+KM_arranged_plots <- ggarrange(plotlist = list(NonImmuneStromal = plotPFS(PFS_fit_NonImmuneStromal), T_NK = plotPFS(PFS_fit_T_NK), B = plotPFS(PFS_fit_B), Myeloid = plotPFS(PFS_fit_Myeloid), plotPFS(PFS_fit_Fibroblasts)), ncol = 3, nrow = 2)
+
+ggsave(paste0(output_dir, "scRNA_KM_Arranged.png"), plot = KM_arranged_plots, dpi = 600, height = 10, width = 16)
+ggsave(paste0(output_dir, "scRNA_KM_Arranged.pdf"), plot = KM_arranged_plots, height = 10, width = 16)
+
+KM_arranged_plots
+
 ```

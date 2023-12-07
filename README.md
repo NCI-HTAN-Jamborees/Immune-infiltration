@@ -1,4 +1,6 @@
-# Immune-infiltration
+# HTAN Immune Infiltration
+
+*Utilizing scRNAseq and ST data to investigate immune suppression*
 
 ### Human Tumor Atlas Network (HTAN) Data Jamboree | Dec. 4-7, 2023 
 
@@ -8,18 +10,36 @@ Immune infiltration is a higly complex and orchestrated process in tumor initati
 
 We focused on utilizing data from patients with matched spatial transcriptomic (10X Visium platform) and single-cell transcriptomic (scRNA-seq) profiling in order to assay not only the immune infiltration (primarily through spatial neighborhood analysis) but also to uncover biological programs and crosstalk underlying immune infiltration as well. 
 
-We utilized a larger scRNA-seq dataset (n=137,000 cells pre QC) to label coarse (broad) and fine (specific) immune cell types. We applied Cottrazm pipeline for spatial transcriptomics datasets to determine putative malignant, boundary and non malignant regions. This is accomplished using InferCNV tool, and integrated with Seurat clustering. Immune cells were used as a normal reference to determine malignant spots. After this Seuerat spot-based scRNA-seq reference-guided deconvolution was performed.
+We utilized a larger scRNA-seq dataset (n=137,000 cells pre QC) to label coarse (broad) and fine (specific) immune cell types.
+
+## Project Goals
+
+- Utilize the HTAN spatial transcriptomics (ST) and scRNA-seq datasets from pancreatic cancer patients to investigate potential mechanisms of immune suppression.
+- ST and scRNA-seq was obtained from HTAN, publication Zhou et al., *Nature Genetics*, 2022
+- Goal for the Jamboree: download, process, and map immune infiltration of HTAN ST data (using scRNA-seq as reference for immune signatures)
 
 ## Workflow 
 
 1. Data compiling and pre-processing
-2. Cottrazm pipeline for morphological expression adjustment and boundary detection, single sample
-3. Seurat pipeline for scRNA-seq annotation of large cohort
+2. Cottrazm pipeline for morphological expression adjustment, single sample
+3. Seurat pipeline for scRNA-seq annotation of large cohort 
 4. Seurat pipeline for combined scRNA-seq/Visium analysis
 5. Deconvolution of Visium spots using scRNA-seq annotated data
 6. Evaluation of immune infiltration
 
+## Take-homes
+
+We successfully downloaded and utilized scRNA-seq and ST HTAN dataset. In addition, we extracted cell type labels using two methods and applied to ST data for spot deconvolution.
+
 ## Future directions
+
+Proportional spot deconvolution (and finish inferCNV cottrazm assignments), formalize GPT pipeline infused with manual annotation information/knowledge, correlate immune specific findings to clinical metadata.
+
+## Challenges
+
+* Even from the manuscript language and HTAN manuals/manifests/metadata, it was **very difficult** to understand/interpret exactly which samples matched with which patient and related to which technology (Visium ST vs scRNAseq vs snRNAseq vs IF), and associated metadata.
+* Saving of the Seven Bridges Data Studio session was error-prone and time-intensive
+* Importing data from HTAN portal to Seven Bridges account was time-intensive and hard to determine best method to use
 
 ## Description of code utilized:
 

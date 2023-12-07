@@ -1,0 +1,89 @@
+---
+title: "01. Read and merge seurat objects"
+output: html_document
+date: "2023-12-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r loadlibraries}
+library(dplyr)
+library(Seurat)
+
+```
+
+## Read our files we need
+
+```{r}
+# Define the file path
+file_path <- "/sbgenomics/project-files/WUSTL_data/WUSTL_matched_visium_scRNA_filename.csv"
+
+# Read the CSV file into a dataframe
+df <- as_tibble(read.csv(file_path) %>% filter(Assay == "scRNA-seq"))
+
+# View the first few rows of the dataframe
+df
+```
+
+## Read in all the files
+```{r}
+
+# Define the base directory
+base_dir <- "/sbgenomics/project-files/WUSTL_data/scRNA_Seq/"
+
+# Get unique participant IDs
+unique_ids <- unique(df$HTAN.Participant.ID)
+
+# Initialize list to store Seurat objects
+seurat_objects <- list()
+
+# Loop through each unique ID and read the corresponding files into a Seurat object
+for (id in unique_ids) {
+  print(id)
+  # Filter dataframe for current ID
+  current_files <- df %>% filter(HTAN.Participant.ID == id)
+  
+  # Read files into a Seurat object
+  sample_data <- ReadMtx(
+    mtx = file.path(base_dir, current_files$Filename[grep("matrix.mtx.gz$", current_files$Filename)]),
+    cells = file.path(base_dir, current_files$Filename[grep("barcodes.tsv.gz$", current_files$Filename)]),
+    features = file.path(base_dir, current_files$Filename[grep("features.tsv.gz$", current_files$Filename)])
+  )
+  
+  # Create Seurat object
+  seurat_objects[[id]] <- CreateSeuratObject(counts = sample_data, project = id, min.cells = 3, min.features = 200)
+}
+```
+```{r}
+seurat_objects[[4]]
+```
+
+
+
+```{r}
+# Merge all Seurat objects into a single object with progress update
+cat("Starting to merge Seurat objects...\n")
+
+# Use the 'merge' function on the first object and pass the rest as a list
+all_data <- merge(x = seurat_objects[[1]], 
+                  y = seurat_objects[-1], 
+                  add.cell.ids = unique_ids[-1])
+
+cat("All Seurat objects merged.\n")
+all_data
+
+
+```
+```{r}
+# Merge all Seurat objects into a single object with progress update
+cat("Starting to merge Seurat objects...\n")
+all_data <- merge(seurat_objects[[1]], c(seurat_objects[[2]],seurat_objects[[3]],seurat_objects[[4]],seurat_objects[[5]],seurat_objects[[6]],seurat_objects[[7]],seurat_objects[[8]],seurat_objects[[9]],seurat_objects[[10]]), add.cell.ids = c(unique_ids[[1]], unique_ids[[2]],unique_ids[[3]],unique_ids[[4]],unique_ids[[5]],unique_ids[[6]],unique_ids[[7]],unique_ids[[8]],unique_ids[[9]],unique_ids[[10]]))
+all_data
+```
+
+```{r}
+saveRDS(all_data, file = "/sbgenomics/output-files/scRNAseq_processing/scRNAseq_seurat_object.rds")
+```
+

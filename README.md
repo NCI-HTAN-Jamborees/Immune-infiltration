@@ -1,12 +1,27 @@
 # Immune-infiltration
 
+### Human Tumor Atlas Network (HTAN) Data Jamboree | Dec. 4-7, 2023 
+
+## Overview
+
 Immune infiltration is a higly complex and orchestrated process in tumor initation and progression. The aim of the study is to utilize the paired transcriptomic and spatial transcriptomic data available through the HTAN initiative to quantify the relative infiltration of immune cells within the tumors and discover relevant biological insights. 
 
 We focused on utilizing data from patients with matched spatial transcriptomic (10X Visium platform) and single-cell transcriptomic (scRNA-seq) profiling in order to assay not only the immune infiltration (primarily through spatial neighborhood analysis) but also to uncover biological programs and crosstalk underlying immune infiltration as well. 
 
 We utilized a larger scRNA-seq dataset (n=137,000 cells pre QC) to label coarse (broad) and fine (specific) immune cell types. We applied Cottrazm pipeline for spatial transcriptomics datasets to determine putative malignant, boundary and non malignant regions. This is accomplished using InferCNV tool, and integrated with Seurat clustering. Immune cells were used as a normal reference to determine malignant spots. After this Seuerat spot-based scRNA-seq reference-guided deconvolution was performed.
 
-Description of code utilized:
+## Workflow 
+
+1. Data compiling and pre-processing
+2. Cottrazm pipeline for morphological expression adjustment and boundary detection, single sample
+3. Seurat pipeline for scRNA-seq annotation of large cohort
+4. Seurat pipeline for combined scRNA-seq/Visium analysis
+5. Deconvolution of Visium spots using scRNA-seq annotated data
+6. Evaluation of immune infiltration
+
+## Future directions
+
+## Description of code utilized:
 
 HTAN_Wrangling.Rmd: R Markdown code to analyze the metadata from the HTAN portal and identify which samples / studies have paired spatial/single-cell transcriptomic data from patients. We identify 13 patients from HTAN Vanderbilt dataset and 10 patients from HTAN WUSTL dataset and match them with relevant file names for downstream analyses.
 
@@ -17,3 +32,13 @@ spatial/cottrazm/ folder:
 * cottrazm_pipeline.Rmd - R Markdown code to run the Cottrazm pipeline, including steps (...)
 * install.R - installation requirements, run before pipeline
 * read_custom.py - modified SME normalization script that is run during morphological normalization step in cottrazm_pipeline.Rmd
+
+## Team
+
+- **Noah Lee**, Affil
+- **Jason Weirather**, Affil
+- **Rena Elkin**, Affil
+- **Hope Mumme**, Emory University
+- **Archana Balan**, Affil
+- **Nina Steel**, Affil
+- **Lucy Zhengyi Chen**, Affil
